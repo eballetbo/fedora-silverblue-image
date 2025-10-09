@@ -1,0 +1,166 @@
+# SPDX-FileCopyrightText: 2021-2025 Sébastien Helleu <flashcode@flashtux.org>
+#
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# WeeChat container based on Alpine
+#
+# Supported arguments:
+#    VERSION  WeeChat version (default: "latest" which is latest stable)
+#    SLIM     1 for a slim version (without plugins: script, scripts and spell)
+
+# ==== base for all stages ====
+
+FROM alpine:3.22 AS base
+LABEL stage=base
+
+LABEL maintainer="Sébastien Helleu <flashcode@flashtux.org>"
+
+# WeeChat version
+ARG VERSION="latest"
+ENV VERSION="${VERSION}"
+
+ARG SLIM=""
+ENV SLIM="${SLIM}"
+
+ARG HOME="/home/user"
+ENV HOME="${HOME}"
+
+ENV LANG="C.UTF-8"
+ENV TERM="xterm-256color"
+
+# create a user
+RUN set -eux ; \
+    adduser -D -h "$HOME" user ; \
+    mkdir -p "$HOME/.weechat" ; \
+    mkdir -p "$HOME/.config/weechat" ; \
+    mkdir -p "$HOME/.local/share/weechat" ; \
+    mkdir -p "$HOME/.cache/weechat" ; \
+    chown -R user:user "$HOME"
+
+# ==== build ====
+
+FROM base AS build
+LABEL stage=build
+
+RUN set -eux ; \
+    \
+    # install download/build dependencies
+    apk add --no-cache \
+        acl-dev \
+        asciidoctor \
+        cjson-dev \
+        cmake \
+        curl \
+        curl-dev \
+        g++ \
+        gcc \
+        gettext-dev \
+        gnupg \
+        gnutls-dev \
+        libgcrypt-dev \
+        make \
+        ncurses-dev \
+        pkgconf \
+        xz \
+        zlib-dev \
+        zstd-dev \
+    ; \
+    if [ -z "$SLIM" ] ; then \
+        apk add --no-cache \
+            argon2-dev \
+            aspell-dev \
+            guile-dev \
+            libxml2-dev \
+            lua5.4-dev \
+            perl-dev \
+            php83-dev \
+            php83-embed \
+            python3-dev \
+            ruby-dev \
+            tcl-dev \
+        ; \
+    fi ; \
+    \
+    # download WeeChat
+    cd /tmp ; \
+    curl -o weechat.tar.xz "https://weechat.org/files/src/weechat-${VERSION}.tar.xz" ; \
+    if [ "$VERSION" != "devel" ] ; then \
+        curl -o weechat.tar.xz.asc "https://weechat.org/files/src/weechat-${VERSION}.tar.xz.asc" ; \
+        export GNUPGHOME="$(mktemp -d)" ; \
+        gpg --batch --keyserver hkps://keys.openpgp.org --recv-keys A9AB5AB778FA5C3522FD0378F82F4B16DEC408F8 ; \
+        gpg --batch --verify /tmp/weechat.tar.xz.asc /tmp/weechat.tar.xz ; \
+        gpgconf --kill all ; \
+    fi ; \
+    \
+    # build WeeChat
+    mkdir -p /tmp/weechat/build ; \
+    tar -xf /tmp/weechat.tar.xz -C /tmp/weechat --strip-components 1 ; \
+    cd /tmp/weechat/build ; \
+    if [ -z "$SLIM" ] ; then \
+        cmake \
+            .. \
+            -DCMAKE_INSTALL_PREFIX=/opt/weechat \
+            -DENABLE_MAN=ON \
+            -DENABLE_HEADLESS=ON \
+        ; \
+    else \
+        cmake \
+            .. \
+            -DCMAKE_INSTALL_PREFIX=/opt/weechat \
+            -DENABLE_MAN=ON \
+            -DENABLE_SCRIPT=OFF \
+            -DENABLE_SCRIPTS=OFF \
+            -DENABLE_SPELL=OFF \
+            -DENABLE_HEADLESS=ON \
+        ; \
+    fi ; \
+    make -j $(nproc) ; \
+    make install
+
+# ==== final image ====
+
+FROM base
+
+RUN set -eux ; \
+    \
+    # install runtime dependencies
+    apk add --no-cache \
+        ca-certificates \
+        cjson \
+        gettext \
+        gnutls \
+        libcurl \
+        libgcrypt \
+        ncurses-libs \
+        ncurses-terminfo \
+        tzdata \
+        zlib \
+        zstd \
+        zstd-libs \
+    ; \
+    if [ -z "$SLIM" ] ; then \
+        apk add --no-cache \
+            aspell-libs \
+            aspell-en \
+            guile \
+            guile-libs \
+            lua5.4-libs \
+            perl \
+            php83 \
+            php83-embed \
+            python3 \
+            ruby-libs \
+            tcl \
+        ; \
+    fi
+
+COPY --from=build /opt/weechat /opt/weechat
+
+RUN ln -sf /opt/weechat/bin/weechat /usr/bin/weechat
+RUN ln -sf /opt/weechat/bin/weechat-headless /usr/bin/weechat-headless
+
+WORKDIR $HOME
+
+USER user
+
+CMD ["weechat"]
