@@ -1,0 +1,104 @@
+# Use CentOS Stream 10 as the base image
+FROM centos:stream10
+
+# Add labels for maintainer and description
+LABEL maintainer="Enric Balletbo i Serra <eballetb@redhat.com>"
+LABEL description="CentOS Stream 10 environment for building the Linux kernel."
+
+# Set environment variables to non-interactive
+ENV LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8
+
+# Install all build dependencies in a single RUN command to optimize layers
+RUN \
+    # Update all packages and install dnf-plugins-core
+    dnf update -y && \
+    dnf install -y dnf-plugins-core && \
+    \
+    # Enable the CodeReady Builder (CRB) repository for development packages
+    # This is essential for accessing many -devel packages.
+    dnf config-manager --set-enabled crb && \
+    \
+    # Install EPEL (Extra Packages for Enterprise Linux) to get 'unzboot'
+    # The 'epel-release' package sets up the repository
+    dnf install -y epel-release && \
+    # Install the core build dependencies
+    # This list is based on the 'BuildRequires' from the official kernel .spec file
+    dnf install -y \
+        asciidoc \
+	b4 \
+        bc \
+        binutils \
+        bison \
+        bzip2 \
+	cpio \
+	dtc \
+        diffutils \
+        dwarves \
+        elfutils-devel \
+        elfutils-libelf-devel \
+        findutils \
+        flex \
+        gawk \
+        gcc \
+        gcc-c++ \
+        git \
+        glibc-static \
+        hmaccalc \
+        hostname \
+        kmod \
+        m4 \
+        make \
+        ncurses-devel \
+        net-tools \
+        numactl-devel \
+	openssl \
+        openssl-devel \
+        perl-Carp \
+        perl-devel \
+        perl-generators \
+        perl-interpreter \
+        pesign \
+        python3 \
+        python3-devel \
+        python3-pyyaml \
+        python3-sphinx \
+        python3-sphinx_rtd_theme \
+        redhat-rpm-config \
+        rsync \
+        tar \
+	unzboot \
+        which \
+        xmlto \
+        xz \
+        zlib-devel \
+    \
+    # Clean up the dnf cache to reduce image size
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+# Build and install mkbootimg from the osm0sis repository
+# This uses the C toolchain (gcc, make, openssl-devel) installed above
+RUN \
+    # Clone the repository
+    git clone https://github.com/osm0sis/mkbootimg /usr/src/mkbootimg && \
+    \
+    # Build and install the tool
+    cd /usr/src/mkbootimg && \
+    # Pull in the mincrypt submodule
+    git submodule update --init && \
+    # Compile the tool, adding -Wno-error to ignore compiler warnings as errors
+    make CFLAGS+="-Wno-error" && \
+    # Install binaries (mkbootimg, unmkbootimg) to /usr/local/bin
+    make install && \
+    \
+    # Clean up the source code
+    cd / && \
+    rm -rf /usr/src/mkbootimg
+
+# Set the default working directory
+WORKDIR /usr/src
+
+# Set the default command to opening a bash shell
+CMD ["bash"]
+
