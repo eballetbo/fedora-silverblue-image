@@ -12,6 +12,7 @@ RUN \
 	rpm-ostree -y install \
 		code \
 		distrobox \
+		flatpak-builder \
 		git \
 		podman-compose \
 		python3-ramalama \
