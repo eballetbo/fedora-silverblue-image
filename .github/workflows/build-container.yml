@@ -18,7 +18,7 @@ jobs:
     runs-on: ubuntu-24.04
     strategy:
       matrix:
-        arch: [amd64, arm64] # amd64 = x86_64, arm64 = aarch64
+        arch: [amd64] # amd64 = x86_64, arm64 = aarch64
 
     env:
       IMAGE_NAME: fedora-silverblue-image
